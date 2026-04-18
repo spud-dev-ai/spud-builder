@@ -5,11 +5,11 @@
 # to run with Bash: "C:\Program Files\Git\bin\bash.exe" ./dev/build.sh
 ###
 
-export APP_NAME="Void"
-export BINARY_NAME="codium"
+export APP_NAME="Spud"
+export BINARY_NAME="spud"
 export CI_BUILD="no"
-export GH_REPO_PATH="voideditor/void"
-export ORG_NAME="voideditor"
+export GH_REPO_PATH="spud-dev-ai/spud-ide"
+export ORG_NAME="spud-dev-ai"
 export SHOULD_BUILD="yes"
 export SKIP_ASSETS="yes"
 export SKIP_BUILD="no"
@@ -21,7 +21,7 @@ export VSCODE_SKIP_NODE_VERSION_CHECK="yes"
 while getopts ":ilops" opt; do
   case "$opt" in
     i)
-      export BINARY_NAME="codium-insiders"
+      export BINARY_NAME="spud-insiders"
       export VSCODE_QUALITY="insider"
       ;;
     l)

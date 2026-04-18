@@ -12,12 +12,12 @@ on:
       checkout_pr:
         type: string
         description: Checkout PR
-      void_commit: # Void added this
+      spud_commit:
         type: string
-        description: Checkout specific Void commit
-      void_release: # Void added this
+        description: Checkout specific Spud IDE commit
+      spud_release:
         type: string
-        description: Custom release number
+        description: Custom release number suffix (appends to MS version)
   repository_dispatch:
     types: [stable]
   push:
@@ -31,9 +31,9 @@ on:
     - '**/*.md'
 
 env:
-  APP_NAME: Void
+  APP_NAME: Spud
   ASSETS_REPOSITORY: ${{ github.repository_owner }}/binaries
-  BINARY_NAME: void
+  BINARY_NAME: spud
   GH_REPO_PATH: ${{ github.repository_owner }}/binaries
   ORG_NAME: ${{ github.repository_owner }}
   OS_NAME: windows
@@ -61,9 +61,9 @@ jobs:
         run: ./get_pr.sh
 
       - name: Clone VSCode repo
-        env: # Void added this
-          VOID_COMMIT: ${{ github.event.inputs.void_commit }} # Void added this
-          VOID_RELEASE: ${{ github.event.inputs.void_release }} # Void added this
+        env:
+          SPUD_COMMIT: ${{ github.event.inputs.spud_commit }}
+          SPUD_RELEASE: ${{ github.event.inputs.spud_release }}
         run: ./get_repo.sh
 
       - name: Check PR or cron
@@ -124,9 +124,9 @@ jobs:
         if: env.SHOULD_BUILD == 'yes'
 
       - name: Clone VSCode repo
-        env: # Void added this
-          VOID_COMMIT: ${{ github.event.inputs.void_commit }} # Void added this
-          VOID_RELEASE: ${{ github.event.inputs.void_release }} # Void added this
+        env:
+          SPUD_COMMIT: ${{ github.event.inputs.spud_commit }}
+          SPUD_RELEASE: ${{ github.event.inputs.spud_release }}
         run: ./get_repo.sh
         if: env.SHOULD_BUILD == 'yes'
 

@@ -22,41 +22,39 @@ if [[ "${CI_BUILD}" != "no" ]]; then
   git config --global --add safe.directory "/__w/$( echo "${GITHUB_REPOSITORY}" | awk '{print tolower($0)}' )"
 fi
 
-VOID_BRANCH="main"
-echo "Cloning void ${VOID_BRANCH}..."
+SPUD_BRANCH="main"
+echo "Cloning Spud IDE (${SPUD_BRANCH})..."
 
 mkdir -p vscode
 cd vscode || { echo "'vscode' dir not found"; exit 1; }
 
 git init -q
-git remote add origin https://github.com/voideditor/void.git
+git remote add origin https://github.com/spud-dev-ai/spud-ide.git
 
 # Allow callers to specify a particular commit to checkout via the
-# environment variable VOID_COMMIT.  We still default to the tip of the
-# ${VOID_BRANCH} branch when the variable is not provided.  Keeping
-# VOID_BRANCH as "main" ensures the rest of the script (and downstream
-# consumers) behave exactly as before.
-if [[ -n "${VOID_COMMIT}" ]]; then
-  echo "Using explicit commit ${VOID_COMMIT}"
+# environment variable SPUD_COMMIT.  We still default to the tip of the
+# ${SPUD_BRANCH} branch when the variable is not provided.
+if [[ -n "${SPUD_COMMIT}" ]]; then
+  echo "Using explicit commit ${SPUD_COMMIT}"
   # Fetch just that commit to keep the clone shallow.
-  git fetch --depth 1 origin "${VOID_COMMIT}"
-  git checkout "${VOID_COMMIT}"
+  git fetch --depth 1 origin "${SPUD_COMMIT}"
+  git checkout "${SPUD_COMMIT}"
 else
-  git fetch --depth 1 origin "${VOID_BRANCH}"
+  git fetch --depth 1 origin "${SPUD_BRANCH}"
   git checkout FETCH_HEAD
 fi
 
 MS_TAG=$( jq -r '.version' "package.json" )
-MS_COMMIT=$VOID_BRANCH # Void - MS_COMMIT doesn't seem to do much
-VOID_VERSION=$( jq -r '.voidVersion' "product.json" ) # Void added this
+MS_COMMIT=$SPUD_BRANCH
+VOID_VERSION=$( jq -r '.voidVersion' "product.json" )
 
-if [[ -n "${VOID_RELEASE}" ]]; then # Void added VOID_RELEASE as optional to bump manually
-  RELEASE_VERSION="${MS_TAG}${VOID_RELEASE}"
+if [[ -n "${SPUD_RELEASE}" ]]; then
+  RELEASE_VERSION="${MS_TAG}${SPUD_RELEASE}"
 else
-  VOID_RELEASE=$( jq -r '.voidRelease' "product.json" )
-  RELEASE_VERSION="${MS_TAG}${VOID_RELEASE}"
+  SPUD_RELEASE=$( jq -r '.voidRelease // ""' "product.json" )
+  RELEASE_VERSION="${MS_TAG}${SPUD_RELEASE}"
 fi
-# Void - RELEASE_VERSION is later used as version (1.0.3+RELEASE_VERSION), so it MUST be a number or it will throw a semver error in void
+# RELEASE_VERSION is later used as version (1.0.3+suffix); voidRelease should be numeric or empty for semver tooling.
 
 
 echo "RELEASE_VERSION=\"${RELEASE_VERSION}\""
@@ -70,7 +68,7 @@ if [[ "${GITHUB_ENV}" ]]; then
   echo "MS_TAG=${MS_TAG}" >> "${GITHUB_ENV}"
   echo "MS_COMMIT=${MS_COMMIT}" >> "${GITHUB_ENV}"
   echo "RELEASE_VERSION=${RELEASE_VERSION}" >> "${GITHUB_ENV}"
-  echo "VOID_VERSION=${VOID_VERSION}" >> "${GITHUB_ENV}" # Void added this
+  echo "VOID_VERSION=${VOID_VERSION}" >> "${GITHUB_ENV}"
 fi
 
 
@@ -79,7 +77,7 @@ echo "----------- get_repo exports -----------"
 echo "MS_TAG ${MS_TAG}"
 echo "MS_COMMIT ${MS_COMMIT}"
 echo "RELEASE_VERSION ${RELEASE_VERSION}"
-echo "VOID VERSION ${VOID_VERSION}"
+echo "VOID_VERSION (marketing) ${VOID_VERSION}"
 echo "----------------------"
 
 

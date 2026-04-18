@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
-APP_NAME="${APP_NAME:-Void}"
+APP_NAME="${APP_NAME:-Spud}"
 APP_NAME_LC="$( echo "${APP_NAME}" | awk '{print tolower($0)}' )"
-BINARY_NAME="${BINARY_NAME:-void}"
-GH_REPO_PATH="${GH_REPO_PATH:-voideditor/void}"
-ORG_NAME="${ORG_NAME:-voideditor}"
+BINARY_NAME="${BINARY_NAME:-spud}"
+GH_REPO_PATH="${GH_REPO_PATH:-spud-dev-ai/spud-ide}"
+ORG_NAME="${ORG_NAME:-spud-dev-ai}"
 
 echo "---------- utils.sh -----------"
 echo "APP_NAME=\"${APP_NAME}\""
