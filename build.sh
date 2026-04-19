@@ -3,6 +3,13 @@
 
 set -ex
 
+# When `vscode/` is a symlink into a monorepo `ide/` checkout, `..` from inside
+# `vscode/` resolves to the monorepo root (the symlink target's parent), not to
+# spud-builder/. The artifact outputs (VSCode-darwin-${ARCH}) intentionally
+# land there via the same `..` resolution, but sourcing helper scripts that
+# live in spud-builder must use an absolute path.
+BUILDER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 . version.sh
 
 if [[ "${SHOULD_BUILD}" == "yes" ]]; then
@@ -34,7 +41,34 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
     find "../VSCode-darwin-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
-    . ../build_cli.sh
+    # CLI (Rust) build is optional for local DMGs; skip cleanly when cargo is
+    # not installed instead of aborting the DMG pipeline. Set SPUD_SKIP_CLI=no
+    # to force the CLI build and surface missing-toolchain errors.
+    if [[ "${SPUD_SKIP_CLI:-auto}" == "auto" ]]; then
+      if command -v cargo >/dev/null 2>&1; then
+        . "${BUILDER_ROOT}/build_cli.sh"
+      else
+        echo "build.sh: cargo not found on PATH; skipping CLI ('code') build. App will lack the 'code' shell command." >&2
+      fi
+    elif [[ "${SPUD_SKIP_CLI}" != "yes" ]]; then
+      . "${BUILDER_ROOT}/build_cli.sh"
+    fi
+
+    # With a symlinked `vscode/`, gulp and build_cli.sh resolve `..` physically,
+    # so `VSCode-darwin-${VSCODE_ARCH}` is produced next to `ide/` (the real
+    # target of the spud-builder/vscode symlink) rather than inside spud-builder/.
+    # Move it to where prepare_assets.sh expects it (and INTEGRATION.md documents).
+    # Check the known possible landing sites in order.
+    for _candidate in \
+      "../VSCode-darwin-${VSCODE_ARCH}" \
+      "../../VSCode-darwin-${VSCODE_ARCH}" \
+      "${BUILDER_ROOT}/../VSCode-darwin-${VSCODE_ARCH}"; do
+      if [[ -d "${_candidate}" && ! -e "${BUILDER_ROOT}/VSCode-darwin-${VSCODE_ARCH}" ]]; then
+        mv "${_candidate}" "${BUILDER_ROOT}/VSCode-darwin-${VSCODE_ARCH}"
+        break
+      fi
+    done
+    unset _candidate
 
     VSCODE_PLATFORM="darwin"
   elif [[ "${OS_NAME}" == "windows" ]]; then
@@ -43,7 +77,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
     # in CI, packaging will be done by a different job
     if [[ "${CI_BUILD}" == "no" ]]; then
-      . ../build/windows/rtf/make.sh
+      . "${BUILDER_ROOT}/build/windows/rtf/make.sh"
 
       npm run gulp "vscode-win32-${VSCODE_ARCH}-min-ci"
 
@@ -52,7 +86,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
         SHOULD_BUILD_REH_WEB="no"
       fi
 
-      . ../build_cli.sh
+      . "${BUILDER_ROOT}/build_cli.sh"
     fi
 
     VSCODE_PLATFORM="win32"
@@ -63,7 +97,7 @@ if [[ "${SHOULD_BUILD}" == "yes" ]]; then
 
       find "../VSCode-linux-${VSCODE_ARCH}" -print0 | xargs -0 touch -c
 
-      . ../build_cli.sh
+      . "${BUILDER_ROOT}/build_cli.sh"
     fi
 
     VSCODE_PLATFORM="linux"

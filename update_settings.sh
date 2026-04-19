@@ -8,8 +8,10 @@ TELEMETRY_CRASH_REPORTER="'telemetry.enableCrashReporter':"
 TELEMETRY_CONFIGURATION=" TelemetryConfiguration.ON"
 NLS=workbench.settings.enableNaturalLanguageSearch
 
-# include common functions
-. ../utils.sh
+# include common functions (works when cwd is vscode/ or elsewhere)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils.sh
+. "${SCRIPT_DIR}/utils.sh"
 
 update_setting () {
   local FILENAME SETTING LINE_NUM IN_SETTING FOUND DEFAULT_TRUE_TO_FALSE

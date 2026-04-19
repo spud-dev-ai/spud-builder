@@ -16,9 +16,13 @@ set -e
 # Void - keep our license...
 # cp -f LICENSE vscode/LICENSE.txt
 
-cd vscode || { echo "'vscode' dir not found"; exit 1; }
+# When `vscode` is a symlink to a monorepo `ide/` checkout, `..` is not spud-builder.
+# Resolve builder root so scripts and patches always load from this repo.
+BUILDER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-../update_settings.sh
+cd "${BUILDER_ROOT}/vscode" || { echo "'vscode' dir not found"; exit 1; }
+
+"${BUILDER_ROOT}/update_settings.sh"
 
 # apply patches
 { set +x; } 2>/dev/null
@@ -29,8 +33,8 @@ echo "BINARY_NAME=\"${BINARY_NAME}\""
 echo "GH_REPO_PATH=\"${GH_REPO_PATH}\""
 echo "ORG_NAME=\"${ORG_NAME}\""
 
-echo "Applying patches at ../patches/*.patch..." # Void comment
-for file in ../patches/*.patch; do
+echo "Applying patches at ${BUILDER_ROOT}/patches/*.patch..." # Void comment
+for file in "${BUILDER_ROOT}/patches"/*.patch; do
   if [[ -f "${file}" ]]; then
     apply_patch "${file}"
   fi
@@ -38,16 +42,16 @@ done
 
 if [[ "${VSCODE_QUALITY}" == "insider" ]]; then
   echo "Applying insider patches..." # Void comment
-  for file in ../patches/insider/*.patch; do
+  for file in "${BUILDER_ROOT}/patches/insider"/*.patch; do
     if [[ -f "${file}" ]]; then
       apply_patch "${file}"
     fi
   done
 fi
 
-if [[ -d "../patches/${OS_NAME}/" ]]; then
+if [[ -d "${BUILDER_ROOT}/patches/${OS_NAME}/" ]]; then
   echo "Applying OS patches (${OS_NAME})..." # Void comment
-  for file in "../patches/${OS_NAME}/"*.patch; do
+  for file in "${BUILDER_ROOT}/patches/${OS_NAME}/"*.patch; do
     if [[ -f "${file}" ]]; then
       apply_patch "${file}"
     fi
@@ -55,7 +59,7 @@ if [[ -d "../patches/${OS_NAME}/" ]]; then
 fi
 
 echo "Applying user patches..." # Void comment
-for file in ../patches/user/*.patch; do
+for file in "${BUILDER_ROOT}/patches/user"/*.patch; do
   if [[ -f "${file}" ]]; then
     apply_patch "${file}"
   fi
@@ -83,23 +87,82 @@ else
 fi
 
 mv .npmrc .npmrc.bak
-cp ../npmrc .npmrc
+cp "${BUILDER_ROOT}/npmrc" .npmrc
+
+# Spud IDE (fork) uses bun: root package.json declares `packageManager: bun@*`, and
+# extensions ship `bun.lock` instead of `package-lock.json`. Fall back to npm when bun
+# is not available or the tree lacks a root `bun.lock` (upstream Code-OSS path).
+SPUD_INSTALL_TOOL=""
+if [[ -f "bun.lock" ]] && command -v bun >/dev/null 2>&1; then
+  SPUD_INSTALL_TOOL="bun"
+fi
 
 for i in {1..5}; do # try 5 times
-  if [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
+  if [[ "${SPUD_INSTALL_TOOL}" == "bun" ]]; then
+    # `bun install` (no --frozen-lockfile) on purpose: spud-builder patches mutate
+    # package.json (e.g. policies.patch swaps @vscode/policy-watcher ->
+    # @vscodium/policy-watcher), so the committed bun.lock is intentionally stale
+    # after patching. Allow bun to rewrite it in place.
+    bun install && break
+  elif [[ "${CI_BUILD}" != "no" && "${OS_NAME}" == "osx" ]]; then
     CXX=clang++ npm ci && break
   else
     npm ci && break
   fi
 
   if [[ $i == 3 ]]; then
-    echo "Npm install failed too many times" >&2
+    echo "Install failed too many times (tool=${SPUD_INSTALL_TOOL:-npm})" >&2
     exit 1
   fi
-  echo "Npm install failed $i, trying again..."
+  echo "Install failed $i (tool=${SPUD_INSTALL_TOOL:-npm}), trying again..."
 
   sleep $(( 15 * (i + 1)))
 done
+
+# Native addons for the Electron main process MUST be compiled against Electron's
+# Node ABI (see ide/.npmrc: disturl/target/runtime). Bun does not honor npm-style
+# `.npmrc` and silently skips install scripts for patched/renamed packages
+# (e.g. @vscodium/policy-watcher, which our policies.patch swaps in, is not in
+# the root's `trustedDependencies`). Result: node_modules/**/build/Release/*.node
+# is empty, the .app silently fails its first `dlopen` on launch, and macOS shows
+# no window. Force a full native rebuild with npm, which reads .npmrc here and
+# drives node-gyp to produce arm64/Electron-ABI .node files for every package
+# with a binding.gyp. No-op for pure JS dependencies.
+if [[ "${SPUD_INSTALL_TOOL}" == "bun" ]] && command -v npm >/dev/null 2>&1; then
+  echo "Rebuilding native node addons against Electron headers (.npmrc target=$(grep '^target=' .npmrc | cut -d= -f2 | tr -d '\"'))..."
+  npm rebuild --build-from-source
+fi
+
+# open-remote-ssh depends on a git-source `simple-socks` whose published `main`
+# (`dist/socks5.js`) is produced by a `prepare` script (`gulp build`). That
+# script needs the package's devDeps, which are not installed for transitive
+# deps under any package manager, so it fails under `bun pm trust --all` too.
+# Workaround: repoint `main` to the bundled `src/socks5.js`; it uses ESM import
+# syntax which webpack resolves natively when bundling the extension.
+fix_missing_dist_main() {
+  local pkg_path="$1"        # e.g. extensions/open-remote-ssh/node_modules/simple-socks/package.json
+  local replacement_main="$2" # e.g. src/socks5.js
+  if [[ ! -f "${pkg_path}" ]]; then
+    return
+  fi
+  local pkg_dir
+  pkg_dir="$(dirname "${pkg_path}")"
+  local current_main
+  current_main=$(node -e 'try{const p=require(process.argv[1]);process.stdout.write(p.main||"")}catch(e){process.exit(0)}' "${pkg_path}")
+  if [[ -n "${current_main}" && -f "${pkg_dir}/${current_main}" ]]; then
+    return
+  fi
+  if [[ ! -f "${pkg_dir}/${replacement_main}" ]]; then
+    echo "fix_missing_dist_main: no replacement '${replacement_main}' in ${pkg_dir}, skipping" >&2
+    return
+  fi
+  echo "fix_missing_dist_main: ${pkg_path} main='${current_main}' -> '${replacement_main}'"
+  local jsonTmp
+  jsonTmp=$(jq --arg m "${replacement_main}" '.main = $m' "${pkg_path}")
+  echo "${jsonTmp}" > "${pkg_path}"
+}
+
+fix_missing_dist_main "extensions/open-remote-ssh/node_modules/simple-socks/package.json" "src/socks5.js"
 
 mv .npmrc.bak .npmrc
 
@@ -138,7 +201,8 @@ setpath "product" "tipsAndTricksUrl" "https://go.microsoft.com/fwlink/?linkid=85
 setpath "product" "twitterUrl" "https://spud.dev"
 
 if [[ "${DISABLE_UPDATE}" != "yes" ]]; then
-  setpath "product" "updateUrl" "https://raw.githubusercontent.com/spud-dev-ai/versions/refs/heads/main"
+  # Cloud update API (Next.js). Override with SPUD_UPDATE_URL for staging (e.g. Vercel preview URL).
+  setpath "product" "updateUrl" "${SPUD_UPDATE_URL:-https://updates.spud.dev}"
   setpath "product" "downloadUrl" "https://github.com/spud-dev-ai/binaries/releases"
 fi
 
@@ -190,7 +254,7 @@ else
   # setpath "product" "win32arm64UserAppId" "{{F6C87466-BC82-4A8F-B0FF-18CA366BA4D8}"
 fi
 
-jsonTmp=$( jq -s '.[0] * .[1]' product.json ../product.json )
+jsonTmp=$( jq -s '.[0] * .[1]' product.json "${BUILDER_ROOT}/product.json" )
 echo "${jsonTmp}" > product.json && unset jsonTmp
 
 cat product.json
@@ -225,7 +289,7 @@ fi
 # announcements
 # replace "s|\\[\\/\\* BUILTIN_ANNOUNCEMENTS \\*\\/\\]|$( tr -d '\n' < ../announcements-builtin.json )|" src/vs/workbench/contrib/welcomeGettingStarted/browser/gettingStarted.ts
 
-../undo_telemetry.sh
+"${BUILDER_ROOT}/undo_telemetry.sh"
 
 replace 's|Microsoft Corporation|Spud|' build/lib/electron.js
 replace 's|Microsoft Corporation|Spud|' build/lib/electron.ts
@@ -271,4 +335,4 @@ elif [[ "${OS_NAME}" == "windows" ]]; then
   sed -i 's|Microsoft Corporation|Spud|' build/win32/code.iss
 fi
 
-cd ..
+cd "${BUILDER_ROOT}"

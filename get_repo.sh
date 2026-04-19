@@ -23,38 +23,53 @@ if [[ "${CI_BUILD}" != "no" ]]; then
 fi
 
 SPUD_BRANCH="main"
-echo "Cloning Spud IDE (${SPUD_BRANCH})..."
 
-mkdir -p vscode
-cd vscode || { echo "'vscode' dir not found"; exit 1; }
-
-git init -q
-git remote add origin https://github.com/spud-dev-ai/spud-ide.git
-
-# Allow callers to specify a particular commit to checkout via the
-# environment variable SPUD_COMMIT.  We still default to the tip of the
-# ${SPUD_BRANCH} branch when the variable is not provided.
-if [[ -n "${SPUD_COMMIT}" ]]; then
-  echo "Using explicit commit ${SPUD_COMMIT}"
-  # Fetch just that commit to keep the clone shallow.
-  git fetch --depth 1 origin "${SPUD_COMMIT}"
-  git checkout "${SPUD_COMMIT}"
+if [[ "${USE_LOCAL_IDE}" == "1" || "${USE_LOCAL_IDE}" == "yes" ]]; then
+  if [[ -z "${SPUD_IDE_DIR}" ]]; then
+    echo "USE_LOCAL_IDE is set but SPUD_IDE_DIR is empty; set it to your spud/ide checkout." >&2
+    exit 1
+  fi
+  echo "Linking local Spud IDE from ${SPUD_IDE_DIR} -> vscode/"
+  rm -rf vscode
+  ln -sfn "$(cd "${SPUD_IDE_DIR}" && pwd)" vscode
+  cd vscode || { echo "'vscode' symlink invalid"; exit 1; }
 else
-  git fetch --depth 1 origin "${SPUD_BRANCH}"
-  git checkout FETCH_HEAD
+  echo "Cloning Spud IDE (${SPUD_BRANCH})..."
+
+  mkdir -p vscode
+  cd vscode || { echo "'vscode' dir not found"; exit 1; }
+
+  git init -q
+  git remote add origin https://github.com/spud-dev-ai/spud-ide.git
+
+  # Allow callers to specify a particular commit to checkout via the
+  # environment variable SPUD_COMMIT.  We still default to the tip of the
+  # ${SPUD_BRANCH} branch when the variable is not provided.
+  if [[ -n "${SPUD_COMMIT}" ]]; then
+    echo "Using explicit commit ${SPUD_COMMIT}"
+    git fetch --depth 1 origin "${SPUD_COMMIT}"
+    git checkout "${SPUD_COMMIT}"
+  else
+    git fetch --depth 1 origin "${SPUD_BRANCH}"
+    git checkout FETCH_HEAD
+  fi
 fi
 
 MS_TAG=$( jq -r '.version' "package.json" )
-MS_COMMIT=$SPUD_BRANCH
-VOID_VERSION=$( jq -r '.voidVersion' "product.json" )
+MS_COMMIT=$( git rev-parse HEAD )
+VOID_VERSION=$( jq -r '.spudVersion // .voidVersion // empty' "product.json" )
+
+if [[ -z "${VOID_VERSION}" || "${VOID_VERSION}" == "null" ]]; then
+  VOID_VERSION="0.0.0"
+fi
 
 if [[ -n "${SPUD_RELEASE}" ]]; then
   RELEASE_VERSION="${MS_TAG}${SPUD_RELEASE}"
 else
-  SPUD_RELEASE=$( jq -r '.voidRelease // ""' "product.json" )
+  SPUD_RELEASE=$( jq -r '.spudRelease // .voidRelease // ""' "product.json" )
   RELEASE_VERSION="${MS_TAG}${SPUD_RELEASE}"
 fi
-# RELEASE_VERSION is later used as version (1.0.3+suffix); voidRelease should be numeric or empty for semver tooling.
+# RELEASE_VERSION is later used as version (1.0.3+suffix); release suffix should be numeric or empty for semver tooling.
 
 
 echo "RELEASE_VERSION=\"${RELEASE_VERSION}\""

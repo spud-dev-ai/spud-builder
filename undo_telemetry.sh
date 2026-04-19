@@ -12,7 +12,9 @@ REPLACEMENT="s|//[^/]+\.data\.microsoft\.com|//0\.0\.0\.0|g"
 
 echo "----------- undo_telemetry -----------"
 # include common functions
-. ../utils.sh
+# Resolve from spud-builder so this works when $PWD (vscode/) is a symlink to a monorepo ide/ checkout.
+UNDO_TELEMETRY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "${UNDO_TELEMETRY_DIR}/utils.sh"
 
 
 if is_gnu_sed; then

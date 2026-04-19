@@ -53,20 +53,24 @@ case "${OSTYPE}" in
     ;;
 esac
 
-UNAME_ARCH=$( uname -m )
+# Allow callers (e.g. build-macos-arm64-dmg.sh) to set VSCODE_ARCH before sourcing this script
+# so Apple Silicon builds work even when the shell runs under Rosetta (uname -m is x86_64).
+if [[ -z "${VSCODE_ARCH:-}" ]]; then
+  UNAME_ARCH=$( uname -m )
 
-if [[ "${UNAME_ARCH}" == "aarch64" || "${UNAME_ARCH}" == "arm64" ]]; then
-  export VSCODE_ARCH="arm64"
-elif [[ "${UNAME_ARCH}" == "ppc64le" ]]; then
-  export VSCODE_ARCH="ppc64le"
-elif [[ "${UNAME_ARCH}" == "riscv64" ]]; then
-  export VSCODE_ARCH="riscv64"
-elif [[ "${UNAME_ARCH}" == "loongarch64" ]]; then
-  export VSCODE_ARCH="loong64"
-elif [[ "${UNAME_ARCH}" == "s390x" ]]; then
-  export VSCODE_ARCH="s390x"
-else
-  export VSCODE_ARCH="x64"
+  if [[ "${UNAME_ARCH}" == "aarch64" || "${UNAME_ARCH}" == "arm64" ]]; then
+    export VSCODE_ARCH="arm64"
+  elif [[ "${UNAME_ARCH}" == "ppc64le" ]]; then
+    export VSCODE_ARCH="ppc64le"
+  elif [[ "${UNAME_ARCH}" == "riscv64" ]]; then
+    export VSCODE_ARCH="riscv64"
+  elif [[ "${UNAME_ARCH}" == "loongarch64" ]]; then
+    export VSCODE_ARCH="loong64"
+  elif [[ "${UNAME_ARCH}" == "s390x" ]]; then
+    export VSCODE_ARCH="s390x"
+  else
+    export VSCODE_ARCH="x64"
+  fi
 fi
 
 export NODE_OPTIONS="--max-old-space-size=8192"
