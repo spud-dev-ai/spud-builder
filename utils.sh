@@ -30,8 +30,16 @@ apply_patch() {
   replace "s|!!ORG_NAME!!|${ORG_NAME}|g" "$1"
   replace "s|!!RELEASE_VERSION!!|${RELEASE_VERSION}|g" "$1"
 
-  if ! git apply --ignore-whitespace "$1"; then
+  # Idempotent apply: if the patch is already applied (reverse applies cleanly),
+  # skip it. This lets the build run against a Spud IDE tree that has some
+  # spud-builder patches already committed upstream.
+  if git apply --ignore-whitespace --check "$1" 2>/dev/null; then
+    git apply --ignore-whitespace "$1"
+  elif git apply --ignore-whitespace --reverse --check "$1" 2>/dev/null; then
+    echo "  already applied, skipping: $1"
+  else
     echo failed to apply patch "$1" >&2
+    mv -f $1{.bak,}
     exit 1
   fi
 
