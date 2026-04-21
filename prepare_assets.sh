@@ -74,7 +74,15 @@ if [[ "${OS_NAME}" == "osx" ]]; then
   if [[ "${SHOULD_BUILD_DMG}" != "no" ]]; then
     echo "Building and moving DMG"
     pushd "VSCode-darwin-${VSCODE_ARCH}"
-    npx create-dmg ./*.app .
+    # Local builds often have no installer cert; create-dmg otherwise picks
+    # "Apple Development" and fails if multiple identities match.
+    if [[ -n "${CREATE_DMG_IDENTITY:-}" ]]; then
+      npx create-dmg --overwrite --identity="${CREATE_DMG_IDENTITY}" ./*.app .
+    elif [[ "${CREATE_DMG_NO_CODE_SIGN:-}" == "yes" ]] || { [[ "${CI_BUILD:-no}" == "no" ]] && [[ -z "${CERTIFICATE_OSX_P12_DATA:-}" ]]; }; then
+      npx create-dmg --overwrite --no-code-sign ./*.app .
+    else
+      npx create-dmg --overwrite ./*.app .
+    fi
     mv ./*.dmg "../assets/${APP_NAME}.${VSCODE_ARCH}.${RELEASE_VERSION}.dmg"
     popd
   fi
